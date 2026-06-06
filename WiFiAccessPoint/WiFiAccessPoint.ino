@@ -16,15 +16,39 @@
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 
+#include "soc/soc_caps.h"
+#include "sdkconfig.h"
+#if SOC_WIFI_SUPPORTED || CONFIG_ESP_WIFI_REMOTE_ENABLED
+
+#include "esp_wifi_types.h"
+#include "WiFiType.h"
+#include "WiFiGeneric.h"
+#include <WiFiUdp.h>
+
+#endif
+#define WIFI_AP_DEFAULT_AUTH_MODE WIFI_AUTH_WPA2_PSK
+#define WIFI_AP_DEFAULT_CIPHER    WIFI_CIPHER_TYPE_CCMP  
+
+extern "C" {
+#include "lwip/apps/lwiperf.h"
+}
+
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2  // Set the GPIO pin where you connected your test LED or comment this line out if your dev board has a built-in LED
 #endif
 
 // Set these to your desired credentials.
-const char *ssid = "yourAP";
-const char *password = "yourPassword";
+const char *ssid = "shubh";
+const char *password = "gotya2405";
 
+uint8_t myCount;
 NetworkServer server(80);
+
+const int localPort = 5000;
+const char* stationIP = "192.168.4.2";
+
+WiFiUDP udp;
+int data = 1; 
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -32,10 +56,11 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("Configuring access point...");
-
+  WiFi.mode(WIFI_AP);
   // You can remove the password parameter if you want the AP to be open.
   // a valid password must have more than 7 characters
-  if (!WiFi.softAP(ssid, password)) {
+  if (!WiFi.softAP(ssid, password,1,0,1)) 
+  {
     log_e("Soft AP creation failed.");
     while (1);
   }
@@ -43,57 +68,53 @@ void setup() {
   Serial.print("AP IP address: ");
   Serial.println(myIP);
   server.begin();
-
+  udp.begin(localPort);
   Serial.println("Server started");
+  myCount = WiFi.softAPgetStationNum();  
+  Serial.print(myCount);
 }
 
-void loop() {
-  NetworkClient client = server.accept();  // listen for incoming clients
+void loop() 
+{
+  
+    WiFiClient client = server.available();
+    myCount = WiFi.softAPgetStationNum();  
+    Serial.print(myCount); 
 
-  if (client) {                     // if you get a client,
-    Serial.println("New Client.");  // print a message out the serial port
-    String currentLine = "";        // make a String to hold incoming data from the client
-    while (client.connected()) {    // loop while the client's connected
-      if (client.available()) {     // if there's bytes to read from the client,
-        char c = client.read();     // read a byte, then
-        Serial.write(c);            // print it out the serial monitor
-        if (c == '\n') {            // if the byte is a newline character
+    if(myCount > 0)
+    { 
+      udp.beginPacket(stationIP, localPort);
+      udp.write((uint8_t*)&data, sizeof(data));
+      udp.endPacket();
 
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
-          if (currentLine.length() == 0) {
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println();
+      data++;
 
-            // the content of the HTTP response follows the header:
-            client.print("Click <a href=\"/H\">here</a> to turn ON the LED.<br>");
-            client.print("Click <a href=\"/L\">here</a> to turn OFF the LED.<br>");
-
-            // The HTTP response ends with another blank line:
-            client.println();
-            // break out of the while loop:
-            break;
-          } else {  // if you got a newline, then clear currentLine:
-            currentLine = "";
-          }
-        } else if (c != '\r') {  // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
-        }
-
-        // Check to see if the client request was "GET /H" or "GET /L":
-        if (currentLine.endsWith("GET /H")) {
-          digitalWrite(LED_BUILTIN, HIGH);  // GET /H turns the LED on
-        }
-        if (currentLine.endsWith("GET /L")) {
-          digitalWrite(LED_BUILTIN, LOW);  // GET /L turns the LED off
-        }
+      if(data > 11)
+      {  
+        data = 0;
       }
-    }
-    // close the connection:
+
+      int count =0;
+      while(count < 4)
+      { 
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(50);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(50);
+        count++; 
+      } 
+
+      Serial.println(data);  
+        
+  }
+    
+ // listen for incoming clients
+  else
+  {
     client.stop();
     Serial.println("Client Disconnected.");
   }
+  // close the connection:
+   
+  
 }
